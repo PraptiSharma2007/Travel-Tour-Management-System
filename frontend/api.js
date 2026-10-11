@@ -108,3 +108,4 @@ const Api = {
 
   canCreateCustomer: () => Boolean(ENDPOINTS.createCustomer)
 };
+window.Api = Api;
