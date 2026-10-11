@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Book a tour | TourWise</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site" id="site-header"></header>
+<section class="hero"><div class="in">
+  <h1>Book a tour</h1>
+  <p>Choose a customer and a package. The total and seat check use live data from the database.</p>
+</div></section>
+<main>
+  <div id="status"></div>
+  <div id="app" hidden>
+    <div class="split">
+      <form class="panel" id="form" novalidate>
+        <h2>Booking details</h2>
+        <div class="field"><label for="customer">Customer</label><select id="customer" required></select></div>
+        <div class="field"><label for="package">Tour package</label><select id="package" required></select></div>
+        <div class="field"><label for="people">Number of people</label><input id="people" type="number" min="1" step="1" value="1" required></div>
+        <p class="msg-error" id="error" role="alert"></p>
+        <button class="btn" id="submit" type="submit">Confirm booking</button>
+        <div class="notice" style="margin-top:1rem" id="cust-note"></div>
+      </form>
+      <div>
+        <div class="panel" id="summary-panel"><h2>Trip summary</h2><div class="summary" id="summary"></div></div>
+        <div class="panel confirm" id="result" hidden style="margin-top:1.2rem"></div>
+      </div>
+    </div>
+  </div>
+</main>
+<script src="api.js"></script>
+<script src="app.js"></script>
+<script>
+renderHeader("booking.html");
+const f = { customer: $("#customer"), pkg: $("#package"), people: $("#people"), error: $("#error"), submit: $("#submit") };
+let customers = [], dests = [], pkgs = [];
+
+async function load() {
+  $("#app").hidden = true;
+  showState($("#status"), "loading", "Loading customers and packages...");
+  try {
+    [customers, dests, pkgs] = await Promise.all([Api.getCustomers(), Api.getDestinations(), Api.getPackages()]);
+  } catch (err) {
+    return showState($("#status"), "error", err.message, load);
+  }
+  if (!customers.length || !pkgs.length) {
+    return showState($("#status"), "empty", !customers.length
+      ? "There are no customers in the database yet, so a booking can't be made."
+      : "There are no tour packages in the database yet, so a booking can't be made.");
+  }
+  $("#status").innerHTML = "";
+  $("#app").hidden = false;
+  $("#cust-note").innerHTML = Api.canCreateCustomer()
+    ? ""
+    : "<strong>Adding new customers isn't available yet.</strong> It needs <code>POST /api/customers</code> on the backend. Until then, pick an existing customer.";
+  $("#cust-note").hidden = Api.canCreateCustomer();
+  f.customer.innerHTML = '<option value="">Select a customer</option>' +
+    customers.map(c => `<option value="${esc(c.id)}">${esc(c.name)} (${esc(c.email)})</option>`).join("");
+  fillPackages(new URLSearchParams(location.search).get("package") || "");
+  update();
+}
+
+function destName(p) {
+  const d = dests.find(x => String(x.id) === String(p.destinationId));
+  return d ? d.name : "Destination #" + p.destinationId;
+}
+
+function fillPackages(selected) {
+  f.pkg.innerHTML = '<option value="">Select a package</option>' + pkgs.map(p =>
+    `<option value="${esc(p.id)}"${isBookable(p) ? "" : " disabled"}>${esc(p.name)} - ${esc(destName(p))} (${isBookable(p) ? p.availableSeats + " seats" : "not bookable"})</option>`).join("");
+  if (selected && pkgs.some(p => String(p.id) === String(selected) && isBookable(p))) f.pkg.value = selected;
+}
+
+const current = () => pkgs.find(p => String(p.id) === f.pkg.value);
+
+// returns an error string, or "" when the booking is valid
+function check() {
+  const p = current(), n = Number(f.people.value);
+  if (!f.customer.value) return "Select a customer.";
+  if (!p) return "Select a tour package.";
+  if (!Number.isInteger(n) || n < 1) return "Enter a whole number of people, 1 or more.";
+  if (!isBookable(p)) return "This package can't be booked right now.";
+  if (n > p.availableSeats) return `Only ${p.availableSeats} seat${p.availableSeats === 1 ? " is" : "s are"} left. Reduce the number of people.`;
+  return "";
+}
+
+function update() {
+  const p = current(), n = Number(f.people.value);
+  const total = p && Number.isInteger(n) && n > 0 ? p.price * n : null;
+  $("#summary").innerHTML = p
+    ? `<dl><dt>Package</dt><dd>${esc(p.name)}</dd><dt>Destination</dt><dd>${esc(destName(p))}</dd>
+       <dt>Duration</dt><dd>${esc(p.days)} days</dd><dt>Price per person</dt><dd>${money(p.price)}</dd>
+       <dt>Seats available</dt><dd>${esc(p.availableSeats)} of ${esc(p.totalSeats)}</dd>
+       <dt>Total amount</dt><dd class="total">${money(total)}</dd></dl>`
+    : "<p>Select a package to see its details and total.</p>";
+  f.error.textContent = f.pkg.value || f.customer.value ? (p && n > p.availableSeats ? check() : "") : "";
+}
+
+[f.customer, f.pkg, f.people].forEach(el => el.addEventListener("input", update));
+
+$("#form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const problem = check();
+  if (problem) { f.error.textContent = problem; return; }
+  const p = current(), n = Number(f.people.value), total = p.price * n;
+  f.error.textContent = "";
+  f.submit.disabled = true; f.submit.textContent = "Booking...";
+  try {
+    const res = await Api.createBooking({ customerId: Number(f.customer.value), packageId: p.id, people: n, total });
+    showResult(res, p, n, total);
+    pkgs = await Api.getPackages().catch(() => pkgs);   // re-read seats from the database
+    fillPackages(f.pkg.value);
+    update();
+  } catch (err) {
+    f.error.textContent = err.message;
+  } finally {
+    f.submit.disabled = false; f.submit.textContent = "Confirm booking";
+  }
+});
+
+function showResult(res, p, n, total) {
+  const b = res.booking, rows = [];
+  if (res.id != null) rows.push(["Booking ID", res.id]);
+  rows.push(["Package", p.name]);
+  rows.push(["People", b && b.people != null ? b.people : n]);
+  rows.push(["Total amount", money(b && b.total != null ? b.total : total)]);
+  if (b && b.date) rows.push(["Booking date", fmtDate(b.date)]);
+  if (b && b.status) rows.push(["Status", b.status]);
+  const el = $("#result");
+  el.hidden = false;
+  el.innerHTML = `<h2>${esc(res.message || "Booking saved")}</h2><div class="summary"><dl>${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl></div>
+    ${res.id == null ? '<p class="meta">The backend did not return a booking ID. Check the Bookings page for the saved record.</p>' : ""}
+    <p><a href="bookings.html">View all bookings</a></p>`;
+  el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+load();
+</script>
+</body>
+</html>

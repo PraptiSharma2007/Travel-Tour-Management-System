@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tour packages | TourWise</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site" id="site-header"></header>
+<section class="hero"><div class="in">
+  <h1>Pick a tour, pick your dates, go.</h1>
+  <p>Prices and open seats are read live from the booking database.</p>
+</div></section>
+<main>
+  <div class="toolbar">
+    <div><label for="dest">Destination</label><select id="dest"><option value="">All destinations</option></select></div>
+  </div>
+  <div id="grid"></div>
+</main>
+<script src="api.js"></script>
+<script src="app.js"></script>
+<script>
+renderHeader("index.html");
+const grid = $("#grid"), filter = $("#dest");
+let dests = [], pkgs = [];
+
+async function load() {
+  grid.className = "";
+  showState(grid, "loading", "Loading tour packages...");
+  try {
+    [dests, pkgs] = await Promise.all([Api.getDestinations(), Api.getPackages()]);
+    filter.innerHTML = '<option value="">All destinations</option>' +
+      dests.map(d => `<option value="${esc(d.id)}">${esc(d.name)}</option>`).join("");
+    draw();
+  } catch (err) {
+    showState(grid, "error", err.message, load);
+  }
+}
+
+function draw() {
+  const byId = Object.fromEntries(dests.map(d => [String(d.id), d]));
+  const list = pkgs.filter(p => !filter.value || String(p.destinationId) === filter.value);
+  if (!list.length) {
+    return showState(grid, "empty", pkgs.length ? "No packages for this destination yet. Try another one." : "No tour packages have been added yet.");
+  }
+  grid.className = "grid";
+  grid.innerHTML = list.map(p => {
+    const d = byId[String(p.destinationId)];
+    const where = d ? [d.name, d.state, d.country].filter(Boolean).join(", ") : "Destination #" + p.destinationId;
+    const book = isBookable(p)
+      ? `<a class="btn small" href="booking.html?package=${encodeURIComponent(p.id)}">Book this tour</a>`
+      : '<span class="btn small off" aria-disabled="true">Not bookable</span>';
+    return `<article class="card">
+      <h3>${esc(p.name)}</h3>
+      <div class="where">${esc(where)}</div>
+      <div class="where">${esc(p.days)} days${d && d.bestTime ? " &middot; best time: " + esc(d.bestTime) : ""}</div>
+      <div class="price">${money(p.price)} <span class="where">per person</span></div>
+      <div class="foot">${seatBadge(p)}${book}</div>
+    </article>`;
+  }).join("");
+}
+
+filter.addEventListener("change", () => { grid.className = ""; draw(); });
+load();
+</script>
+</body>
+</html>

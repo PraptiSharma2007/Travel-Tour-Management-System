@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bookings | TourWise</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site" id="site-header"></header>
+<section class="hero"><div class="in">
+  <h1>All bookings</h1>
+  <p>Every booking stored in the database, with its customer, package, and destination.</p>
+</div></section>
+<main>
+  <div class="notice" id="notice" hidden></div>
+  <div id="out"></div>
+</main>
+<script src="api.js"></script>
+<script src="app.js"></script>
+<script>
+renderHeader("bookings.html");
+const out = $("#out");
+
+async function load() {
+  showState(out, "loading", "Loading bookings...");
+  $("#notice").hidden = true;
+  let bookings;
+  try { bookings = await Api.getBookings(); }
+  catch (err) { return showState(out, "error", err.message, load); }
+  if (!bookings.length) return showState(out, "empty", "No bookings yet. Book a tour to see it here.");
+
+  // Bookings only carry IDs, so names come from the other API lists.
+  const [c, p, d] = await Promise.allSettled([Api.getCustomers(), Api.getPackages(), Api.getDestinations()]);
+  const customers = c.value || [], pkgs = p.value || [], dests = d.value || [];
+  if (c.status === "rejected" || p.status === "rejected" || d.status === "rejected") {
+    $("#notice").hidden = false;
+    $("#notice").textContent = "Some names couldn't be loaded, so IDs are shown instead.";
+  }
+  const find = (list, id) => list.find(x => String(x.id) === String(id));
+
+  out.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>ID</th><th>Date</th><th>Customer</th><th>Package</th><th>Destination</th><th class="num">People</th><th class="num">Total</th><th>Status</th></tr></thead>
+    <tbody>${bookings.map(b => {
+      const cu = find(customers, b.customerId), pk = find(pkgs, b.packageId), de = pk && find(dests, pk.destinationId);
+      return `<tr><td>${esc(b.id)}</td><td>${fmtDate(b.date)}</td>
+        <td>${esc(cu ? cu.name : "Customer #" + b.customerId)}</td>
+        <td>${esc(pk ? pk.name : "Package #" + b.packageId)}</td>
+        <td>${esc(de ? de.name : "-")}</td>
+        <td class="num">${esc(b.people)}</td><td class="num">${money(b.total)}</td>
+        <td><span class="badge">${esc(b.status || "-")}</span></td></tr>`;
+    }).join("")}</tbody></table></div>`;
+}
+load();
+</script>
+</body>
+</html>

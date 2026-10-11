@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Customers | TourWise</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site" id="site-header"></header>
+<section class="hero"><div class="in">
+  <h1>Customers</h1>
+  <p>Everyone registered in the database.</p>
+</div></section>
+<main>
+  <div class="notice" id="missing" hidden>
+    <strong>Adding customers isn't available yet.</strong> It needs <code>POST /api/customers</code> on the backend.
+    Once it exists, set <code>createCustomer</code> in <code>api.js</code> and build the form.
+  </div>
+  <div class="toolbar">
+    <div><label for="q">Search</label><input id="q" type="search" placeholder="Name, email, phone, or city"></div>
+    <button class="btn off" type="button" id="add" disabled title="Needs POST /api/customers">Add customer (unavailable)</button>
+  </div>
+  <div id="out"></div>
+</main>
+<script src="api.js"></script>
+<script src="app.js"></script>
+<script>
+renderHeader("customers.html");
+const out = $("#out");
+let customers = [];
+$("#missing").hidden = Api.canCreateCustomer();
+
+async function load() {
+  showState(out, "loading", "Loading customers...");
+  try { customers = await Api.getCustomers(); }
+  catch (err) { return showState(out, "error", err.message, load); }
+  draw();
+}
+
+function draw() {
+  const q = $("#q").value.trim().toLowerCase();
+  const list = customers.filter(c => !q || [c.name, c.email, c.phone, c.city].some(v => String(v ?? "").toLowerCase().includes(q)));
+  if (!list.length) return showState(out, "empty", customers.length ? "No customers match your search." : "No customers have been added yet.");
+  out.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Phone</th><th>City</th><th>Registered</th></tr></thead>
+    <tbody>${list.map(c => `<tr><td>${esc(c.id)}</td><td>${esc(c.name)}</td><td>${esc(c.email)}</td><td>${esc(c.phone)}</td><td>${esc(c.city || "-")}</td><td>${fmtDate(c.registered)}</td></tr>`).join("")}</tbody></table></div>`;
+}
+$("#q").addEventListener("input", draw);
+load();
+</script>
+</body>
+</html>
