@@ -7,7 +7,7 @@
      4. buildBookingPayload() - request body for POST
    ========================================================== */
 
-const API_BASE_URL = "const API_BASE_URL = "https://travel-tour-management-system.onrender.com/api";";
+const API_BASE_URL = "https://travel-tour-management-system.onrender.com/api";
 
 const ENDPOINTS = {
   customers: "/customers",        // GET
